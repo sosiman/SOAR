@@ -6,6 +6,12 @@ listen: "127.0.0.1:8787"
 
 # Token de acceso. Vacio = sin autenticacion (solo aceptable en localhost).
 token: ""
+# Alternativa recomendada: token en fichero 0600. Lo gestiona scripts/token.sh.
+# token_file: "/etc/soar-agent/token"
+
+# Habilitar el panel web. false = agente sin interfaz (solo enforcement).
+# Se puede cambiar en caliente con scripts/panel.sh on|off .
+panel: true
 
 # Cgroup al que se engancha el hook. /sys/fs/cgroup = todo el sistema.
 cgroup: "/sys/fs/cgroup"

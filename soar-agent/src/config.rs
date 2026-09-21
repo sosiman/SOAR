@@ -12,6 +12,12 @@ pub struct Config {
     /// Token de acceso al panel. Vacio = sin autenticacion (solo recomendado en localhost).
     #[serde(default)]
     pub token: String,
+    /// Fichero con el token (permisos 0600). Se usa si no hay token en claro.
+    #[serde(default)]
+    pub token_file: Option<PathBuf>,
+    /// Habilitar el panel web. false = agente sin interfaz (solo enforcement).
+    #[serde(default = "default_panel")]
+    pub panel: bool,
     /// Cgroup al que enganchar el hook (por defecto la raiz: todo el sistema).
     #[serde(default = "default_cgroup")]
     pub cgroup: PathBuf,
@@ -38,12 +44,17 @@ fn default_policy() -> PathBuf {
 fn default_history() -> usize {
     500
 }
+fn default_panel() -> bool {
+    true
+}
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             listen: default_listen(),
             token: String::new(),
+            token_file: None,
+            panel: default_panel(),
             cgroup: default_cgroup(),
             policy: default_policy(),
             log: None,

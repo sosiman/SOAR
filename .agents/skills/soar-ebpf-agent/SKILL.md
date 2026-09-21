@@ -66,6 +66,33 @@ Prueba de aceptacion (el bloqueo debe ser inmediato, ~0 ms, no un timeout):
 
 - IP mal impresa o CIDR que no matchea: es un bug de orden de bytes (ver ebpf-internals.md).
 
+## Operacion: servicio, panel y token
+
+Control del servicio (systemd):
+
+    sudo systemctl start|stop|restart|status soar-agent
+    journalctl -u soar-agent -f
+    sudo systemctl enable soar-agent        # arrancar al encender
+    sudo systemctl disable soar-agent       # no arrancar al encender (no lo para)
+
+Panel web (por defecto en 127.0.0.1:8787, solo local):
+
+    bash scripts/panel.sh status|on|off
+    # off apaga solo el panel; el enforcement del kernel sigue activo
+
+Token (si esta definido, la API exige Authorization: Bearer o ?token=):
+
+    bash scripts/token.sh show|generate|clear
+    TOKEN=$(sudo cat /etc/soar-agent/token)
+    curl -s -H "Authorization: Bearer $TOKEN" localhost:8787/api/status
+
+Instalacion/actualizacion:
+
+    sudo deploy/install.sh              # instala y activa al arranque
+    sudo deploy/install.sh --no-enable  # instala y arranca, sin autostart
+
+Prioridad del token: CLI --token > variable SOAR_AGENT_TOKEN > token en config > token_file.
+
 ## Errores conocidos (detalle en troubleshooting.md)
 
 - cargo install bpf-linker -> "unable to find library -lLLVM": usar el prebuilt musl.

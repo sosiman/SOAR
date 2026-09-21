@@ -37,6 +37,16 @@ guarda en localStorage.
 - `emit` descarta los eventos cuyo destino es el puerto del panel en loopback (ruido).
 - El modo monitor usa `CONTROL[0] = 0` en vez de desenganchar: cambio instantaneo y reversible.
 
+## Gestion: panel on/off y token
+
+- `config.panel` (bool, por defecto true): si es false, main.rs no lanza `api::serve` y el agente
+  queda headless. Se cambia con `scripts/panel.sh on|off`, que edita /etc/soar-agent/agent.yaml y
+  reinicia el servicio (con espera a que el puerto este arriba).
+- `resolve_token` en main.rs, por prioridad: `--token` > `SOAR_AGENT_TOKEN` > `config.token` >
+  `config.token_file`. El token resuelto vive en `AppState.token` y `api::auth` lo usa.
+- Si el panel esta activo, escucha fuera de loopback y no hay token, se avisa por log.
+- `SOAR_AGENT_TOKEN` es comodo para systemd (`Environment=`) sin dejar el token en el YAML.
+
 ## API
 
 | Metodo | Ruta | Cuerpo |

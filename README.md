@@ -114,7 +114,9 @@ curl -s -X POST -H 'Content-Type: application/json' -d '{"enforce":false}' local
 
 ~~~yaml
 listen: "127.0.0.1:8787"     # panel (usa 0.0.0.0:8787 + token para exponerlo)
-token: ""                    # vacio = sin autenticacion (solo localhost)
+token: ""                    # token en claro (vacio = sin auth)
+token_file: "/etc/soar-agent/token"  # alternativa recomendada: fichero 0600
+panel: true                  # false = agente sin interfaz (solo enforcement)
 cgroup: "/sys/fs/cgroup"     # raiz = todo el sistema
 policy: "/etc/soar-agent/policy.yaml"
 log: "/var/log/soar-agent/events.jsonl"
@@ -138,13 +140,23 @@ systemctl status soar-agent
 journalctl -u soar-agent -f
 ~~~
 
-Esto compila, instala el binario en /usr/local/bin, la config en /etc/soar-agent, la unidad en systemd y habilita el arranque automatico.
+Esto compila, instala el binario en /usr/local/bin, la config en /etc/soar-agent, genera un token y habilita el arranque automatico. Con `--no-enable` instala y arranca, pero sin autostart.
+
+Gestion diaria:
+
+~~~bash
+bash scripts/panel.sh on|off|status   # encender/apagar el panel (sin parar el enforcement)
+bash scripts/token.sh show|generate|clear
+~~~
 
 ## Seguridad
 
 - Enganchar a /sys/fs/cgroup afecta a **todo el sistema**; usa `cgroup` para acotarlo.
 - El **loopback nunca se bloquea** desde la API (auto-proteccion del panel).
-- Para exponerlo en red, define un **token** y considera un proxy con TLS.
+- El panel escucha en **127.0.0.1** por defecto: no es accesible desde la red.
+- Define un **token** (`token` o `token_file`): cualquier proceso local puede alcanzar el panel.
+- Para exponerlo en red: **token + TLS** (o mejor, un tunel SSH: `ssh -L 8787:127.0.0.1:8787 host`).
+- Puedes **apagar el panel** sin parar el enforcement: `scripts/panel.sh off`.
 - Un bug en el enforcement puede cortar trafico legitimo: prueba en **monitor** primero.
 
 ## Como funciona (notas tecnicas)

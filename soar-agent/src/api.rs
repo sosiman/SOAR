@@ -49,10 +49,9 @@ async fn auth(
     req: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let token = state.config.token.trim();
-    if token.is_empty() {
+    let Some(token) = state.token.as_deref() else {
         return Ok(next.run(req).await);
-    }
+    };
     let header_ok = req
         .headers()
         .get(AUTHORIZATION)
@@ -96,7 +95,7 @@ async fn status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
         "blocked": state.blocked.load(Ordering::Relaxed),
         "blocklist": blocklist,
         "listen": state.config.listen,
-        "auth": !state.config.token.trim().is_empty(),
+        "auth": state.token.is_some(),
     }))
 }
 

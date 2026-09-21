@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0] - 2026-09-21
+
+### Anadido
+- Token gestionable por prioridad: CLI, variable de entorno, config o fichero 0600.
+- `scripts/token.sh` (generate/show/clear) y generacion automatica en la instalacion.
+- Interruptor del panel: `panel: true|false` y `scripts/panel.sh on|off|status`.
+- `deploy/install.sh --no-enable` para instalar sin arranque automatico.
+
+### Cambiado
+- El panel solo exige token cuando hay uno configurado; avisa si se expone en red sin token.
+
 ## [0.2.0] - 2026-09-21
 
 ### Anadido

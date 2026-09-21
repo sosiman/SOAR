@@ -69,11 +69,16 @@ async fn main() -> anyhow::Result<()> {
     if let Some(listen) = cli.listen {
         config.listen = listen;
     }
-    if let Some(token) = cli.token {
-        config.token = token;
-    }
     if let Some(cgroup) = cli.cgroup {
         config.cgroup = cgroup;
+    }
+
+    let token = resolve_token(cli.token.clone(), &config);
+    if config.panel && token.is_none() && !is_loopback_listen(&config.listen) {
+        warn!(
+            "panel en {} SIN token: exponlo solo en localhost o define token/token_file",
+            config.listen
+        );
     }
 
     let mut policy = Policy::load(&config.policy).unwrap_or_default();
@@ -85,16 +90,26 @@ async fn main() -> anyhow::Result<()> {
 
     let (cmd_tx, cmd_rx) = mpsc::channel::<Command>(64);
     let (events_tx, _events_rx) = broadcast::channel::<EventOut>(2048);
-    let state = Arc::new(AppState::new(config.clone(), policy, cmd_tx, events_tx));
+    let state = Arc::new(AppState::new(
+        config.clone(),
+        policy,
+        token,
+        cmd_tx,
+        events_tx,
+    ));
 
     let actor = Actor::setup(state.clone(), cmd_rx).context("inicializando el agente eBPF")?;
 
-    let api_state = state.clone();
-    tokio::spawn(async move {
-        if let Err(e) = api::serve(api_state).await {
-            log::error!("panel web: {e}");
-        }
-    });
+    if config.panel {
+        let api_state = state.clone();
+        tokio::spawn(async move {
+            if let Err(e) = api::serve(api_state).await {
+                log::error!("panel web: {e}");
+            }
+        });
+    } else {
+        log::info!("Panel web deshabilitado (panel: false); enforcement activo sin interfaz");
+    }
 
     actor.run().await;
 
@@ -105,6 +120,44 @@ async fn main() -> anyhow::Result<()> {
     }
     log::info!("Adios");
     Ok(())
+}
+
+/// Resuelve el token del panel por prioridad: CLI > entorno > config > fichero.
+fn resolve_token(cli: Option<String>, config: &Config) -> Option<String> {
+    if let Some(t) = cli {
+        let t = t.trim().to_string();
+        if !t.is_empty() {
+            return Some(t);
+        }
+    }
+    if let Ok(t) = std::env::var("SOAR_AGENT_TOKEN") {
+        let t = t.trim().to_string();
+        if !t.is_empty() {
+            return Some(t);
+        }
+    }
+    let t = config.token.trim().to_string();
+    if !t.is_empty() {
+        return Some(t);
+    }
+    if let Some(path) = &config.token_file {
+        match std::fs::read_to_string(path) {
+            Ok(text) => {
+                let t = text.trim().to_string();
+                if !t.is_empty() {
+                    return Some(t);
+                }
+            }
+            Err(e) => warn!("no se pudo leer token_file {}: {e}", path.display()),
+        }
+    }
+    None
+}
+
+/// True si la escucha esta limitada a loopback.
+fn is_loopback_listen(listen: &str) -> bool {
+    let host = listen.rsplit_once(':').map(|(h, _)| h).unwrap_or(listen);
+    host == "127.0.0.1" || host == "localhost" || host == "::1" || host == "[::1]"
 }
 
 /// Eleva RLIMIT_MEMLOCK (necesario en kernels antiguos; inocuo en modernos).

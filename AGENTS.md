@@ -62,6 +62,49 @@ como servicio.
     sudo bpftool prog show | grep -i cgroup
     sudo bpftool map show | grep -Ei 'BLOCKLIST|CONTROL|EVENTS'
 
+## Comandos utiles para dar al usuario
+
+Cuando el usuario pregunte como arrancar, parar, exponer el panel o gestionar el token, dale estos
+comandos tal cual (no hace falta que los ejecutes tu):
+
+    # Servicio (systemd) - control inmediato
+    sudo systemctl start soar-agent        # arrancar ahora
+    sudo systemctl stop soar-agent         # parar ahora
+    sudo systemctl restart soar-agent      # reiniciar
+    sudo systemctl status soar-agent       # estado
+    journalctl -u soar-agent -f            # logs en vivo
+
+    # Arranque automatico al encender el PC
+    sudo systemctl enable soar-agent       # activar autostart
+    sudo systemctl disable soar-agent      # desactivar autostart (no lo para ahora)
+    sudo systemctl disable --now soar-agent  # desactivar y parar
+
+    # Panel web (por defecto 127.0.0.1:8787)
+    bash scripts/panel.sh status           # ver si esta on u off
+    bash scripts/panel.sh off              # apagar el panel (el enforcement sigue)
+    bash scripts/panel.sh on               # volver a encenderlo
+
+    # Token de acceso
+    bash scripts/token.sh show             # ver el token actual
+    bash scripts/token.sh generate         # generar/rotar token
+    bash scripts/token.sh clear            # quitar token (sin autenticacion)
+
+    # Instalar / reinstalar
+    sudo deploy/install.sh                 # instala y activa al arranque
+    sudo deploy/install.sh --no-enable     # instala y arranca, sin autostart
+
+    # API (necesita el token)
+    TOKEN=$(sudo cat /etc/soar-agent/token)
+    curl -s -H "Authorization: Bearer $TOKEN" localhost:8787/api/status
+    curl -s -H "Authorization: Bearer $TOKEN" -X POST -H 'Content-Type: application/json' \
+         -d '{"cidr":"1.1.1.1"}' localhost:8787/api/block
+
+Reglas al explicar esto:
+- distinguish "parar ahora" (stop / boton Parar) de "no arrancar al encender" (disable).
+- El panel solo escucha en 127.0.0.1 por defecto: no se ve desde la red. Para acceso remoto,
+  tunel SSH (ssh -L 8787:127.0.0.1:8787 usuario@host), no abrir el puerto.
+- Si el token esta definido, el panel lo pide; `scripts/token.sh show` lo muestra.
+
 ## Invariantes tecnicos (no romper)
 
 1. Retorno del hook: 1 = permitir (SK_PASS), 0 = denegar (SK_DROP -> EPERM). NO invertir.

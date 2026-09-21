@@ -42,6 +42,8 @@ pub enum Command {
 pub struct AppState {
     pub started: Instant,
     pub config: Config,
+    /// Token resuelto (CLI/env/config/token_file). None = panel sin autenticacion.
+    pub token: Option<String>,
     /// Puerto del panel, para no ensuciar el historial con sus propias peticiones.
     pub panel_port: Option<u16>,
     pub policy: Mutex<Policy>,
@@ -57,6 +59,7 @@ impl AppState {
     pub fn new(
         config: Config,
         policy: Policy,
+        token: Option<String>,
         cmd_tx: mpsc::Sender<Command>,
         events_tx: broadcast::Sender<EventOut>,
     ) -> Self {
@@ -69,6 +72,7 @@ impl AppState {
         Self {
             started: Instant::now(),
             config,
+            token,
             panel_port,
             policy: Mutex::new(policy),
             cmd_tx,

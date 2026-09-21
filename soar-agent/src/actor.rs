@@ -113,11 +113,18 @@ impl Actor {
             mut cmd_rx,
         } = self;
 
-        info!(
-            "Agente en marcha (version {}). Panel en http://{}",
-            env!("CARGO_PKG_VERSION"),
-            state.config.listen
-        );
+        if state.config.panel {
+            info!(
+                "Agente en marcha (version {}). Panel en http://{}",
+                env!("CARGO_PKG_VERSION"),
+                state.config.listen
+            );
+        } else {
+            info!(
+                "Agente en marcha (version {}). Panel deshabilitado (solo enforcement)",
+                env!("CARGO_PKG_VERSION")
+            );
+        }
 
         loop {
             tokio::select! {
