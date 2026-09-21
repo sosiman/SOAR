@@ -1,2 +1,17 @@
 /target
 **/*.rs.bk
+
+# Secretos y datos locales: NUNCA subir
+token
+*.token
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+id_rsa*
+id_ed25519*
+*.jsonl
+events.jsonl
+*.log

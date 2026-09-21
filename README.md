@@ -59,8 +59,8 @@ El hook se ejecuta **en la ruta de la syscall connect()**, antes de que la conex
 ## Inicio rapido
 
 ~~~bash
-git clone https://github.com/TU_USUARIO/soar-agent.git
-cd soar-agent
+git clone https://github.com/sosiman/SOAR.git
+cd SOAR
 scripts/setup.sh      # instala toolchain, clang/LLVM y bpf-linker
 scripts/build.sh      # compila (arrastra el eBPF con nightly)
 

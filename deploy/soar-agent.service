@@ -1,6 +1,6 @@
 [Unit]
 Description=soar-agent - Agente SOAR (eBPF) con panel web
-Documentation=https://github.com/REEMPLAZA_USUARIO/soar-agent
+Documentation=https://github.com/sosiman/SOAR
 After=network-online.target
 Wants=network-online.target
 

@@ -1,6 +1,0 @@
-cd /home/sosi/soar-agent
-sudo deploy/install.sh     # compila, instala y (re)activa el servicio
-
-sudo systemctl start soar-agent    : ya instalado
-
-sudo systemctl enable soar-agent    : volver activarlo despues de PARAR desde el dashboard
