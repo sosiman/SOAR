@@ -1,0 +1,16 @@
+[package]
+name = "soar-agent-common"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Tipos compartidos entre el programa eBPF y el agente de usuario"
+
+[features]
+default = []
+user = ["aya"]
+
+[dependencies]
+aya = { workspace = true, optional = true }
+
+[lib]
+path = "src/lib.rs"
