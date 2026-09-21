@@ -151,3 +151,5 @@ Detalle en .agents/notes/troubleshooting.md. Los mas probables:
 ## Roadmap
 
 Detalle en .agents/notes/roadmap.md. Fase 1 y 2 HECHAS; fase 3 = SOAR con playbooks.
+Siguiente trabajo planificado (filtrado de egreso real, allowlist por dominio/proceso):
+docs/plan-allowlist-egress.md .
