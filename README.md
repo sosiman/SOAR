@@ -1,110 +1,177 @@
 # soar-agent
 
-Agente de ejecucion de acciones **SOAR** a nivel de **kernel** sobre Linux, escrito en **Rust +
-eBPF (Aya)**.
+> Agente **SOAR** autonomo para Linux: respuesta automatica a ataques con **enforcement eBPF** en el kernel y **panel web** de control.
 
-> **Fase 1 (MVP):** observa y **bloquea conexiones TCP salientes IPv4 en el kernel**, en la propia
-> ruta de la syscall connect(), consultando una lista de bloqueo con soporte de CIDR.
+![license](https://img.shields.io/badge/license-MIT-blue)
+![rust](https://img.shields.io/badge/rust-stable%20%2B%20nightly-orange)
+![ebpf](https://img.shields.io/badge/eBPF-Aya-blueviolet)
+![platform](https://img.shields.io/badge/platform-Linux-lightgrey)
 
-## Por que eBPF y no un modulo del kernel
+**soar-agent** observa las conexiones salientes de una maquina **dentro del kernel** (eBPF, hook cgroup/connect4) y **bloquea automaticamente** las que coinciden con tu politica. Trae un **panel web** para ver eventos en vivo, editar la politica, pausar el enforcement y detener el servicio. Esta pensado para ejecutarse como **servicio systemd** siempre encendido, sin intervencion manual.
 
-El hook cgroup/connect4 se ejecuta **dentro del kernel**, en el contexto de la syscall connect(),
-antes de que se establezca la conexion. Devolver 0 hace que connect() falle con EPERM; devolver 1
-la permite. Eso da control real de enforcement sin escribir un modulo:
+---
 
-- El **verificador** de eBPF garantiza que el programa no cuelga el kernel.
-- Es **CO-RE**: no hay que recompilar por version de kernel.
-- El programa no puede tocar memoria arbitraria ni llamar helpers fuera de la lista permitida.
+## Por que eBPF
+
+El hook se ejecuta **en la ruta de la syscall connect()**, antes de que la conexion se establezca. Devolver 0 la deniega con EPERM de forma **inmediata** (0 ms, no es un timeout) y **dificil de esquivar**. Frente a un modulo de kernel:
+
+- El **verificador** de eBPF garantiza que el programa no puede colgar la maquina.
+- **CO-RE**: no hay que recompilar por version de kernel.
+- Superficie de ataque minima y sin necesidad de firmar modulos.
+- El programa no puede acceder a memoria arbitraria ni a helpers fuera de la lista permitida.
+
+## Caracteristicas
+
+- Enforcement en kernel con hook **cgroup/connect4** (IPv4).
+- Lista de bloqueo con soporte **CIDR** (LPM trie).
+- **Panel web** embebido: eventos en vivo por SSE, contadores, edicion de politica, pausar/reanudar/parar.
+- **API HTTP** para automatizacion e integracion.
+- Politica en **YAML** con persistencia y cambios en caliente.
+- Interruptor de **enforce/monitor** sin reenganchar el hook.
+- **Auto-proteccion**: el loopback no se puede bloquear (no te deja fuera del panel).
+- **Log JSONL** de eventos y despliegue como **servicio systemd**.
+- Opcional: **token** de acceso al panel.
 
 ## Arquitectura
 
-        (kernel)  cgroup/connect4  -->  LPM trie BLOCKLIST   (decision: PASS / DROP)
-             |
-             |  RingBuf EVENTS (pid, uid, ip, puerto, comm, blocked)
-             v
-     (usuarios)  soar-agent  -->  consola / (roadmap) bus de eventos -> orquestador SOAR
+~~~
+  (kernel)  cgroup/connect4  -->  LPM trie BLOCKLIST     decision: PASS / DROP
+                  |
+                  |  RingBuf EVENTS (pid, uid, ip, puerto, comm, blocked)
+                  v
+  (usuarios)  actor eBPF  --(broadcast)-->  panel web + API HTTP
+                  ^
+                  |  ordenes (bloquear, pausar, politica)
+              panel / API
+~~~
 
-- **soar-agent-ebpf**: programa eBPF. LpmTrie u32,u8 (CIDR) + RingBuf de eventos.
-- **soar-agent-common**: ConnectEvent compartido (no_std; aya::Pod tras el feature user).
-- **soar-agent**: binario de usuario (Aya + tokio). Rellena la blocklist, carga/engancha el
-  programa y consume el ring buffer de forma asincrona.
+- **soar-agent-ebpf**: programa eBPF. LpmTrie (CIDR), Array de control y RingBuf.
+- **soar-agent-common**: tipo ConnectEvent compartido (no_std; aya::Pod en usuarios).
+- **soar-agent**: actor eBPF, API/panel HTTP (axum) y CLI.
 
 ## Requisitos
 
 - Linux con **cgroup v2** y BTF en /sys/kernel/btf/vmlinux.
 - Rust **stable** + **nightly** con el componente rust-src.
-- clang/LLVM y **bpf-linker** (lo instala scripts/setup.sh).
-- Privilegios de root para cargar programas eBPF.
+- clang/LLVM y **bpf-linker**.
+- root (para cargar eBPF y enganchar cgroups).
 
-Todo se instala con:
+## Inicio rapido
 
-    scripts/setup.sh
+~~~bash
+git clone https://github.com/TU_USUARIO/soar-agent.git
+cd soar-agent
+scripts/setup.sh      # instala toolchain, clang/LLVM y bpf-linker
+scripts/build.sh      # compila (arrastra el eBPF con nightly)
 
-## Compilar
+sudo ./target/release/soar-agent --listen 127.0.0.1:8787 --monitor
+# abre http://127.0.0.1:8787
+~~~
 
-    scripts/build.sh
-    # o directamente
-    cargo build --release
+Para bloquear de verdad, arranca en modo enforce (por defecto) con una configuracion:
 
-cargo build compila el crate eBPF con nightly (via aya-build) y lo incrusta en el binario de
-usuario. El resultado es target/release/soar-agent.
+~~~bash
+sudo ./target/release/soar-agent --config config/agent.yaml
+~~~
 
-## Uso
+## Panel web
 
-    # Observar todo (sin bloquear nada)
-    sudo ./target/release/soar-agent --log-allowed
+El panel se sirve en el puerto indicado por `listen` (por defecto 127.0.0.1:8787). Permite:
 
-    # Bloquear una IP y una red completa
-    sudo ./target/release/soar-agent --block 1.2.3.4 --block 10.0.0.0/8
+- Ver el **estado** (enforce o monitor), uptime y contadores.
+- **Eventos en vivo** (SSE) con hora, accion, proceso, pid, uid y destino.
+- Editar la **politica** (modo + blocklist) y guardarla en caliente.
+- **Pausar / reanudar** el enforcement sin reiniciar.
+- **Parar** el agente de forma limpia.
 
-    # O con el wrapper
-    scripts/run.sh --block 203.0.113.5
+Si defines `token`, el panel pide el token y la API admite `Authorization: Bearer <token>` (el SSE tambien acepta `?token=`).
 
-Opciones:
+## API HTTP
 
-| Opcion | Descripcion |
-|---|---|
-| --block CIDR | IP o CIDR a bloquear (repetible). |
-| --cgroup PATH | Cgroup al que enganchar (por defecto /sys/fs/cgroup, todo el sistema). |
-| --log-allowed | Registrar tambien las conexiones permitidas. |
+| Metodo | Ruta | Descripcion |
+|---|---|---|
+| GET | /api/status | Estado, contadores, blocklist y version |
+| GET | /api/events | Stream SSE de eventos en vivo |
+| GET | /api/events/recent | Ultimos eventos en memoria |
+| GET | /api/policy | Politica actual |
+| PUT | /api/policy | Reemplaza la politica |
+| POST | /api/block | Anade un CIDR: `{"cidr":"10.0.0.0/8"}` |
+| DELETE | /api/block | Elimina un CIDR |
+| POST | /api/enforce | Pausa/reanuda: `{"enforce":false}` |
+| POST | /api/shutdown | Detiene el agente |
 
-### Prueba rapida
+Ejemplos:
 
-    # Terminal 1
-    sudo ./target/release/soar-agent --block 1.1.1.1 --log-allowed
+~~~bash
+curl -s localhost:8787/api/status
+curl -s -X POST -H 'Content-Type: application/json' -d '{"cidr":"1.1.1.1"}' localhost:8787/api/block
+curl -s -X POST -H 'Content-Type: application/json' -d '{"enforce":false}' localhost:8787/api/enforce
+~~~
 
-    # Terminal 2
-    curl -m 5 http://1.1.1.1       # debe fallar (EPERM / permiso denegado)
-    curl -m 5 http://9.9.9.9       # debe funcionar
+## Configuracion
 
-La salida del agente muestra una linea por conexion, con BLOCK o ALLOW.
+`config/agent.yaml`:
+
+~~~yaml
+listen: "127.0.0.1:8787"     # panel (usa 0.0.0.0:8787 + token para exponerlo)
+token: ""                    # vacio = sin autenticacion (solo localhost)
+cgroup: "/sys/fs/cgroup"     # raiz = todo el sistema
+policy: "/etc/soar-agent/policy.yaml"
+log: "/var/log/soar-agent/events.jsonl"
+history: 500
+~~~
+
+`config/policy.yaml`:
+
+~~~yaml
+mode: enforce                # enforce | monitor
+blocklist:
+  - 203.0.113.10
+  - 198.51.100.0/24
+~~~
+
+## Despliegue como servicio
+
+~~~bash
+sudo deploy/install.sh
+systemctl status soar-agent
+journalctl -u soar-agent -f
+~~~
+
+Esto compila, instala el binario en /usr/local/bin, la config en /etc/soar-agent, la unidad en systemd y habilita el arranque automatico.
 
 ## Seguridad
 
-- Enforce a nivel de kernel: una vez enganchado a la **cgroup raiz**, afecta a **todo el sistema**.
-  Usa --cgroup para limitarlo a un subarbol de cgroup.
-- **eBPF, no modulo**: el verificador evita que el agente tumbe la maquina.
-- El bloqueo es reversible: al salir el proceso, el bpf_link se libera y el hook se desengancha.
-- No metas en la blocklist la IP de gestion del propio host (te quedarias fuera).
+- Enganchar a /sys/fs/cgroup afecta a **todo el sistema**; usa `cgroup` para acotarlo.
+- El **loopback nunca se bloquea** desde la API (auto-proteccion del panel).
+- Para exponerlo en red, define un **token** y considera un proxy con TLS.
+- Un bug en el enforcement puede cortar trafico legitimo: prueba en **monitor** primero.
+
+## Como funciona (notas tecnicas)
+
+- La blocklist vive en un **LPM trie** con la clave en **bytes de red** (asi el kernel compara prefijos correctamente).
+- El modo monitor usa un **Array de control** en el mapa eBPF: pausar no desengancha el hook.
+- Los eventos viajan por **ring buffer** y se reparten con un canal **broadcast** a los clientes SSE.
+- Toda mutacion de mapas pasa por un **unico actor**, evitando compartir el Ebpf entre tareas.
 
 ## Roadmap
 
-1. Fase 1 - Observacion + bloqueo de conexiones salientes (este repo).
-2. Fase 2 - Politica declarativa (YAML firmado), allowlist, metricas y API local.
-3. Fase 3 - Bus de eventos (NATS) y orquestador SOAR con playbooks.
-4. Fase 4 - Mas acciones (matar proceso, cuarentena con fanotify) y conectores.
+- [x] **Fase 1** - Observacion y bloqueo de conexiones salientes (eBPF).
+- [x] **Fase 2** - Servicio autonomo, politica YAML y panel web.
+- [ ] **Fase 3** - Publicacion de eventos a un bus (NATS) y motor SOAR de playbooks.
+- [ ] **Fase 4** - Mas acciones: matar proceso, cuarentena con fanotify, contencion de usuario.
+- [ ] IPv6 (connect6) y UDP (sendmsg).
 
-## Para agentes
+## Desarrollo
 
-Este repositorio es autodescriptivo para agentes:
+~~~bash
+export PATH="$HOME/.cargo/bin:$PATH"
+cargo build --release
+cargo clippy --release
+~~~
 
-- AGENTS.md - instrucciones del proyecto (se carga al abrir el workspace aqui).
-- .agents/notes/ - memoria tecnica: arquitectura, toolchain, eBPF internals, troubleshooting, roadmap.
-- .agents/skills/soar-ebpf-agent/SKILL.md - skill reutilizable con el procedimiento completo.
-
-DSH descubre las skills de proyecto en .agents/skills/<nombre>/SKILL.md y .dsh/skills/<nombre>/SKILL.md,
-y AGENTS.md en la raiz (marcada con .git).
+Este repositorio es **autodescriptivo para agentes**: mira AGENTS.md y .agents/ (notas tecnicas y skills).
 
 ## Licencia
 
-MIT OR Apache-2.0. El programa eBPF se declara Dual MIT/GPL para poder usar helpers GPL-only.
+MIT. El programa eBPF se declara Dual MIT/GPL para poder usar helpers GPL-only.

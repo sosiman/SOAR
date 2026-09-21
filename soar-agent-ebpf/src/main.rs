@@ -11,7 +11,7 @@ use aya_ebpf::{
     bindings::sk_action,
     helpers::{bpf_get_current_comm, bpf_get_current_pid_tgid, bpf_get_current_uid_gid},
     macros::{cgroup_sock_addr, map},
-    maps::{lpm_trie::Key, LpmTrie, RingBuf},
+    maps::{lpm_trie::Key, Array, LpmTrie, RingBuf},
     programs::SockAddrContext,
 };
 use soar_agent_common::{ConnectEvent, TASK_COMM_LEN};
@@ -19,6 +19,10 @@ use soar_agent_common::{ConnectEvent, TASK_COMM_LEN};
 /// Lista de bloqueo: clave = (prefix_len, IPv4 en bytes de red), valor = 1.
 #[map]
 static BLOCKLIST: LpmTrie<u32, u8> = LpmTrie::with_max_entries(4096, 0);
+
+/// Interruptor global de enforcement. Indice 0: 1 = activo, 0 = solo observar (monitor).
+#[map]
+static CONTROL: Array<u32> = Array::with_max_entries(1, 0);
 
 /// Eventos hacia el agente de usuario (1 MiB, potencia de dos y multiplo de pagina).
 #[map]
@@ -45,7 +49,9 @@ fn try_connect4(ctx: SockAddrContext) -> Result<i32, i32> {
     let ip_host = u32::from_be_bytes(ip_key.to_ne_bytes());
     let port = u16::from_be((sock_addr.user_port & 0xffff) as u16);
 
-    let blocked = BLOCKLIST.get(&Key::new(32, ip_key)).is_some();
+    // El panel puede pausar el enforcement sin desenganchar el hook (control instantaneo).
+    let enforcing = CONTROL.get(0).is_some_and(|v| *v != 0);
+    let blocked = enforcing && BLOCKLIST.get(&Key::new(32, ip_key)).is_some();
 
     emit(ConnectEvent {
         pid: (bpf_get_current_pid_tgid() >> 32) as u32,

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>soar-agent - panel</title>
+<style>
+  :root { --bg:#0b0f14; --panel:#121821; --line:#1e2733; --fg:#e6edf3; --mut:#8b98a5;
+          --ok:#2ea043; --bad:#f85149; --warn:#d29922; --acc:#388bfd; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  header { display:flex; align-items:center; gap:16px; padding:14px 20px;
+           border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; }
+  h1 { font-size:16px; margin:0; letter-spacing:.5px; }
+  .pill { padding:3px 10px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
+  .pill.on { background:rgba(46,160,67,.15); color:var(--ok); border-color:var(--ok); }
+  .pill.off { background:rgba(210,153,34,.15); color:var(--warn); border-color:var(--warn); }
+  .grow { flex:1; }
+  .stat { color:var(--mut); font-size:12px; }
+  .stat b { color:var(--fg); font-size:14px; }
+  main { display:grid; grid-template-columns: 360px 1fr; gap:16px; padding:16px; align-items:start; }
+  @media (max-width:900px){ main { grid-template-columns:1fr; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .card h2 { font-size:13px; margin:0 0 10px; color:var(--mut); text-transform:uppercase; letter-spacing:1px; }
+  button { background:#1b2430; color:var(--fg); border:1px solid var(--line); border-radius:7px;
+           padding:7px 12px; cursor:pointer; font:inherit; }
+  button:hover { border-color:var(--acc); }
+  button.danger:hover { border-color:var(--bad); color:var(--bad); }
+  button.ok:hover { border-color:var(--ok); color:var(--ok); }
+  input, select, textarea { width:100%; background:#0d131b; color:var(--fg); border:1px solid var(--line);
+            border-radius:7px; padding:8px; font:inherit; }
+  textarea { min-height:150px; resize:vertical; }
+  .row { display:flex; gap:8px; margin-top:8px; }
+  .row > * { flex:1; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--mut); font-weight:normal; position:sticky; top:57px; background:var(--panel); }
+  .b { color:var(--bad); font-weight:bold; }
+  .a { color:var(--ok); }
+  .events { max-height:70vh; overflow:auto; }
+  .muted { color:var(--mut); }
+  .flex { display:flex; gap:8px; align-items:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SOAR-AGENT</h1>
+  <span id="status" class="pill off">cargando...</span>
+  <span class="stat">uptime <b id="uptime">-</b></span>
+  <span class="stat">permitidas <b id="allowed" class="a">0</b></span>
+  <span class="stat">bloqueadas <b id="blocked" class="b">0</b></span>
+  <span class="grow"></span>
+  <button id="toggle" class="ok">Pausar</button>
+  <button id="stop" class="danger">Parar</button>
+</header>
+<main>
+  <section class="card">
+    <h2>Politica</h2>
+    <label class="muted">Modo</label>
+    <select id="mode">
+      <option value="enforce">enforce (bloquea)</option>
+      <option value="monitor">monitor (solo observa)</option>
+    </select>
+    <div style="height:10px"></div>
+    <label class="muted">Blocklist (una IP o CIDR por linea)</label>
+    <textarea id="blocklist" spellcheck="false"></textarea>
+    <div class="row">
+      <button id="save" class="ok">Guardar politica</button>
+    </div>
+    <div style="height:10px"></div>
+    <label class="muted">Anadir bloqueo rapido</label>
+    <div class="row">
+      <input id="quick" placeholder="1.2.3.4 o 10.0.0.0/8">
+      <button id="add" style="flex:0 0 auto">Anadir</button>
+    </div>
+  </section>
+  <section class="card">
+    <div class="flex">
+      <h2 style="flex:1">Eventos en vivo</h2>
+      <span id="live" class="pill">SSE</span>
+    </div>
+    <div class="events">
+      <table>
+        <thead><tr><th>hora</th><th>accion</th><th>comm</th><th>pid</th><th>uid</th><th>destino</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script>
+  var token = localStorage.getItem('soar_token') || '';
+  function headers() { return token ? { 'Authorization': 'Bearer ' + token } : {}; }
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({}, headers(), opts.headers || {});
+    return fetch(path, opts).then(function (r) {
+      if (r.status === 401) { askToken(); throw new Error('no autorizado'); }
+      return r;
+    });
+  }
+  function askToken() {
+    var t = prompt('Token del panel:');
+    if (t !== null) { token = t.trim(); localStorage.setItem('soar_token', token); location.reload(); }
+  }
+  function fmtUptime(s) {
+    var h = Math.floor(s/3600), m = Math.floor((s%3600)/60), x = s%60;
+    return (h? h+'h ':'') + (m? m+'m ':'') + x + 's';
+  }
+  function refresh() {
+    api('/api/status').then(function (r) { return r.json(); }).then(function (s) {
+      var el = document.getElementById('status');
+      el.textContent = s.enforcing ? 'ENFORCE' : 'MONITOR / pausado';
+      el.className = 'pill ' + (s.enforcing ? 'on' : 'off');
+      document.getElementById('uptime').textContent = fmtUptime(s.uptime_s);
+      document.getElementById('allowed').textContent = s.allowed;
+      document.getElementById('blocked').textContent = s.blocked;
+      document.getElementById('mode').value = s.mode;
+      var ta = document.getElementById('blocklist');
+      if (document.activeElement !== ta) { ta.value = (s.blocklist || []).join('\n'); }
+      document.getElementById('toggle').textContent = s.enforcing ? 'Pausar' : 'Reanudar';
+    }).catch(function () {});
+  }
+  function row(ev) {
+    var tr = document.createElement('tr');
+    var t = new Date(ev.ts_ms).toLocaleTimeString();
+    tr.innerHTML = '<td class="muted">' + t + '</td>' +
+      '<td class="' + (ev.action === 'block' ? 'b' : 'a') + '">' + ev.action + '</td>' +
+      '<td>' + ev.comm + '</td>' + '<td>' + ev.pid + '</td>' + '<td>' + ev.uid + '</td>' +
+      '<td>' + ev.ip + ':' + ev.port + '</td>';
+    return tr;
+  }
+  function recent() {
+    api('/api/events/recent').then(function (r) { return r.json(); }).then(function (list) {
+      var body = document.getElementById('rows');
+      body.innerHTML = '';
+      list.forEach(function (ev) { body.appendChild(row(ev)); });
+    }).catch(function () {});
+  }
+  function connect() {
+    var url = '/api/events' + (token ? '?token=' + encodeURIComponent(token) : '');
+    var es = new EventSource(url);
+    var live = document.getElementById('live');
+    es.addEventListener('connect', function (m) {
+      var body = document.getElementById('rows');
+      body.insertBefore(row(JSON.parse(m.data)), body.firstChild);
+      while (body.children.length > 500) { body.removeChild(body.lastChild); }
+    });
+    es.onopen = function () { live.textContent = 'SSE conectado'; live.className = 'pill on'; };
+    es.onerror = function () { live.textContent = 'SSE reconectando'; live.className = 'pill off'; };
+  }
+  document.getElementById('toggle').onclick = function () {
+    api('/api/status').then(function (r) { return r.json(); }).then(function (s) {
+      return api('/api/enforce', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ enforce: !s.enforcing }) });
+    }).then(refresh).catch(function(){});
+  };
+  document.getElementById('stop').onclick = function () {
+    if (confirm('Detener el agente? Se desenganchara el hook y se perdera el bloqueo.')) {
+      api('/api/shutdown', { method:'POST' }).catch(function(){});
+    }
+  };
+  document.getElementById('save').onclick = function () {
+    var policy = { mode: document.getElementById('mode').value,
+      blocklist: document.getElementById('blocklist').value.split('\n').map(function(s){return s.trim();}).filter(Boolean) };
+    api('/api/policy', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(policy) })
+      .then(refresh).catch(function(){});
+  };
+  document.getElementById('add').onclick = function () {
+    var v = document.getElementById('quick').value.trim();
+    if (!v) return;
+    api('/api/block', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ cidr: v }) })
+      .then(function(){ document.getElementById('quick').value=''; refresh(); }).catch(function(){});
+  };
+  refresh(); recent(); connect();
+  setInterval(refresh, 2000);
+</script>
+</body>
+</html>

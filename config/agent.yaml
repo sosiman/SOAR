@@ -1,0 +1,20 @@
+# Configuracion de soar-agent
+# Instalacion recomendada: /etc/soar-agent/agent.yaml
+
+# Direccion del panel web. Para exponerlo en la red, usa 0.0.0.0:8787 y define un token.
+listen: "127.0.0.1:8787"
+
+# Token de acceso. Vacio = sin autenticacion (solo aceptable en localhost).
+token: ""
+
+# Cgroup al que se engancha el hook. /sys/fs/cgroup = todo el sistema.
+cgroup: "/sys/fs/cgroup"
+
+# Fichero de politica que el panel lee y guarda en caliente.
+policy: "/etc/soar-agent/policy.yaml"
+
+# Log de eventos en JSONL (una linea por conexion). Comentar para no persistir.
+log: "/var/log/soar-agent/events.jsonl"
+
+# Eventos recientes que se conservan en memoria para el panel.
+history: 500

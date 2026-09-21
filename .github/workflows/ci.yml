@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchains
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup toolchain install nightly --profile minimal --component rust-src
+          rustup default stable
+
+      - name: Dependencias del sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm lld zstd curl
+
+      - name: bpf-linker (prebuilt musl)
+        run: |
+          URL=https://github.com/aya-rs/bpf-linker/releases/download/v0.11.1/bpf-linker-x86_64-unknown-linux-musl.tar.zst
+          curl -sSL "$URL" -o /tmp/bl.tar.zst
+          zstd -d -f /tmp/bl.tar.zst -o /tmp/bl.tar
+          mkdir -p "$HOME/.cargo/bin"
+          tar xf /tmp/bl.tar -C "$HOME/.cargo/bin"
+          chmod +x "$HOME/.cargo/bin/bpf-linker"
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Clippy
+        run: cargo clippy --release --locked
