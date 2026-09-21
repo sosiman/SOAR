@@ -7,7 +7,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/soar-agent --config /etc/soar-agent/agent.yaml
-Restart=always
+Restart=on-failure
 RestartSec=2
 User=root
 # Endurecimiento: sistema de solo lectura salvo lo imprescindible.
