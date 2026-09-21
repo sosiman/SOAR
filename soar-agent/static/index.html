@@ -156,7 +156,7 @@
     }).then(refresh).catch(function(){});
   };
   document.getElementById('stop').onclick = function () {
-    if (confirm('Detener el agente? Se desenganchara el hook y se perdera el bloqueo.')) {
+    if (confirm('Detener el agente? Se apagara y NO volvera solo. Para reactivarlo: sudo systemctl start soar-agent (o reinicia el PC si esta habilitado al arranque).')) {
       api('/api/shutdown', { method:'POST' }).catch(function(){});
     }
   };
