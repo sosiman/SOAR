@@ -30,8 +30,9 @@ pub async fn serve(state: Arc<AppState>) -> anyhow::Result<()> {
 }
 
 fn router(state: Arc<AppState>) -> Router {
-    Router::new()
-        .route("/", get(index))
+    // La API va protegida con token; el dashboard (/) es publico para que pueda cargar y
+    // pedir el token. Si / tambien exigiera token, el panel nunca llegaria a abrirse.
+    let api = Router::new()
         .route("/api/status", get(status))
         .route("/api/events", get(events))
         .route("/api/events/recent", get(recent))
@@ -39,8 +40,9 @@ fn router(state: Arc<AppState>) -> Router {
         .route("/api/block", post(add_block).delete(remove_block))
         .route("/api/enforce", post(set_enforce))
         .route("/api/shutdown", post(shutdown))
-        .layer(axum::middleware::from_fn_with_state(state.clone(), auth))
-        .with_state(state)
+        .layer(axum::middleware::from_fn_with_state(state.clone(), auth));
+
+    Router::new().route("/", get(index)).merge(api).with_state(state)
 }
 
 /// Exige token si la configuracion define uno. Acepta cabecera Bearer o ?token= (para SSE).
